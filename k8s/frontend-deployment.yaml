@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: yourdockerhub/frontend:v1.0.0  # update this
+        image: sandy10/frontend:v1.0.0  # update this
         ports:
           - containerPort: 80
 ---
