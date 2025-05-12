@@ -1,0 +1,62 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'  # triggers on version tags like v1.0.0
+
+env:
+  REGISTRY: docker.io
+  IMAGE_BACKEND: sandy10/backend
+  IMAGE_FRONTEND: sandy10/frontend
+  KUBE_NAMESPACE: default
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Extract tag
+      id: vars
+      run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+    - name: Build and push backend
+      run: |
+        docker build -t $IMAGE_BACKEND:${TAG} ./backend
+        docker push $IMAGE_BACKEND:${TAG}
+
+    - name: Build and push frontend
+      run: |
+        docker build -t $IMAGE_FRONTEND:${TAG} ./frontend
+        docker push $IMAGE_FRONTEND:${TAG}
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Set up Kubeconfig
+      run: |
+        echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+
+    - name: Deploy to Kubernetes
+      run: |
+        sed "s|sandy10/backend.*|$IMAGE_BACKEND:${TAG}|g" k8s/backend-deployment.yaml > backend-deploy.yaml
+        sed "s|sandy10/frontend.*|$IMAGE_FRONTEND:${TAG}|g" k8s/frontend-deployment.yaml > frontend-deploy.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/db-statefulset.yaml
+        kubectl apply -f backend-deploy.yaml
+        kubectl apply -f frontend-deploy.yaml
